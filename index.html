@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Perspective Studio (AI Powered)</title>
+    <!-- Three.js for 3D Rendering -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <!-- Marked for Markdown parsing -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+    <style>
+        body { background-color: #18181b; color: #e4e4e7; touch-action: none; }
+        
+        /* The Stage */
+        #studio-container {
+            position: relative;
+            width: 100%;
+            height: 45vh;
+            background: #27272a;
+            overflow: hidden;
+            border-bottom: 2px solid #3f3f46;
+        }
+
+        #three-canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        /* The User's Upload Overlay */
+        #user-layer {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            pointer-events: none;
+            opacity: 0;
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+            mix-blend-mode: normal; 
+            transition: opacity 0.3s;
+            transform-origin: center;
+        }
+
+        .comparing #user-layer {
+            mix-blend-mode: difference;
+            opacity: 0.7;
+        }
+
+        /* Results Modal Overlay */
+        #results-modal {
+            background: rgba(0, 0, 0, 0.95);
+            backdrop-filter: blur(5px);
+        }
+
+        /* Metric Cards */
+        .metric-card {
+            background: #27272a;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            border-left: 4px solid #52525b;
+        }
+        .pass { border-left-color: #22c55e; }
+        .fail { border-left-color: #ef4444; }
+
+        .hidden-input { display: none; }
+        input[type=range] { width: 100%; accent-color: #8b5cf6; }
+    </style>
+</head>
+<body class="flex flex-col h-screen overflow-hidden">
+
+    <!-- Header -->
+    <header class="flex justify-between items-center p-3 bg-zinc-900 border-b border-zinc-800">
+        <div>
+            <h1 class="font-bold text-base text-white"><i class="fas fa-magic text-purple-500 mr-2"></i>Perspective Studio</h1>
+            <div class="text-xs text-zinc-400">AI Art Teacher Mode</div>
+        </div>
+        <div class="text-right">
+            <div class="font-mono text-lg text-green-400" id="score-display">0 pts</div>
+            <div class="text-xs font-bold text-red-500 hidden" id="streak-broken">STREAK BROKEN</div>
+        </div>
+    </header>
+
+    <!-- Main Viewport -->
+    <div id="studio-container">
+        <canvas id="three-canvas"></canvas>
+        <div id="user-layer"></div>
+    </div>
+
+    <!-- Controls Area -->
+    <main class="flex-1 flex flex-col p-4 gap-3 bg-zinc-900 overflow-y-auto">
+        
+        <!-- Step 1: Draw -->
+        <div id="step-draw" class="flex-1 flex flex-col justify-center items-center gap-4">
+            <p class="text-center text-zinc-400">Level <span id="level-display">1</span>: <span id="shape-name-display" class="font-bold text-white">Box</span></p>
+            <label class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-8 rounded-full cursor-pointer shadow-lg flex items-center gap-2">
+                <i class="fas fa-camera"></i> Upload Sketch
+                <input type="file" id="image-upload" accept="image/*" class="hidden-input" onchange="handleUpload(this)">
+            </label>
+            <button onclick="nextLevel(false)" class="text-xs text-zinc-500 underline">Skip Level</button>
+        </div>
+
+        <!-- Step 2: Align -->
+        <div id="step-align" class="hidden flex-1 flex flex-col">
+            <div class="text-center text-zinc-300 text-xs mb-2 uppercase tracking-wide">
+                Align Your Sketch
+            </div>
+            
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="text-xs text-zinc-500">Scale</label>
+                    <input type="range" min="0.5" max="3" step="0.05" value="1" id="scale-slider" oninput="updateTransform()">
+                </div>
+                <div>
+                    <label class="text-xs text-zinc-500">Rotation</label>
+                    <input type="range" min="-180" max="180" step="1" value="0" id="rotate-slider" oninput="updateTransform()">
+                </div>
+            </div>
+
+            <div class="flex gap-2 mt-auto">
+                <button onclick="resetToDraw()" class="flex-1 bg-zinc-700 py-3 rounded text-zinc-300 font-bold">Back</button>
+                <button onclick="validateWithAI()" class="flex-1 bg-purple-600 hover:bg-purple-700 py-3 rounded text-white font-bold shadow-lg flex justify-center items-center gap-2">
+                    <i class="fas fa-robot"></i> Ask AI Teacher
+                </button>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Results Modal -->
+    <div id="results-modal" class="fixed inset-0 z-50 hidden flex flex-col items-center justify-center p-4">
+        <div class="bg-zinc-900 w-full max-w-md rounded-xl border border-zinc-700 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div class="p-4 bg-zinc-800 border-b border-zinc-700 flex justify-between items-center">
+                <h2 class="text-xl font-bold text-white">Critique</h2>
+                <span id="final-result-badge" class="px-3 py-1 rounded bg-zinc-700 text-xs font-bold uppercase">Pending</span>
+            </div>
+            
+            <div class="p-4 overflow-y-auto flex-1">
+                <!-- Shape Card -->
+                <div class="metric-card" id="card-shape">
+                    <div class="flex justify-between mb-1">
+                        <span class="font-bold text-sm">1. Shape</span>
+                        <i class="fas fa-check text-green-500 hidden" id="icon-shape-pass"></i>
+                        <i class="fas fa-times text-red-500 hidden" id="icon-shape-fail"></i>
+                    </div>
+                    <div class="text-xs text-zinc-400">
+                        Target: <span id="res-shape-target" class="text-white">--</span> | 
+                        AI Saw: <span id="res-shape-user" class="text-purple-400 font-bold">--</span>
+                    </div>
+                </div>
+
+                <!-- Orientation Card -->
+                <div class="metric-card" id="card-orient">
+                    <div class="flex justify-between mb-1">
+                        <span class="font-bold text-sm">2. Orientation</span>
+                        <i class="fas fa-check text-green-500 hidden" id="icon-orient-pass"></i>
+                        <i class="fas fa-times text-red-500 hidden" id="icon-orient-fail"></i>
+                    </div>
+                    <div id="res-orient-feedback" class="text-xs text-zinc-400 italic">--</div>
+                </div>
+
+                <!-- Lighting Card -->
+                <div class="metric-card" id="card-light">
+                    <div class="flex justify-between mb-1">
+                        <span class="font-bold text-sm">3. Lighting</span>
+                        <i class="fas fa-check text-green-500 hidden" id="icon-light-pass"></i>
+                        <i class="fas fa-times text-red-500 hidden" id="icon-light-fail"></i>
+                    </div>
+                    <div id="res-light-feedback" class="text-xs text-zinc-400 italic">--</div>
+                </div>
+            </div>
+
+            <div class="p-4 bg-zinc-800 border-t border-zinc-700">
+                <button id="btn-continue" onclick="closeResultsAndContinue()" class="w-full bg-zinc-700 hover:bg-zinc-600 text-white font-bold py-3 rounded-lg transition">
+                    Continue
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Overlay Loading -->
+    <div id="loader" class="fixed inset-0 bg-black z-50 hidden flex items-center justify-center flex-col">
+        <i class="fas fa-circle-notch fa-spin text-4xl text-purple-500 mb-4"></i>
+        <p class="text-zinc-400 animate-pulse">AI is analyzing your sketch...</p>
+    </div>
+
+    <script>
+        // --- API & State ---
+        // TODO: PASTE YOUR API KEY HERE FOR LOCAL USE
+        const apiKey = "AIzaSyB95vcE7Odq6Fl6aegHpjZepzcetT0OdUk"; 
+        let state = { score: 0, level: 1, streak: true, targetShapeName: 'Box', roundResult: false };
+        let transform = { x: 0, y: 0, scale: 1, rotate: 0 };
+        let userImageSrc = null;
+
+        // --- Three.js Setup ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x27272a);
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / (window.innerHeight * 0.45), 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('three-canvas'), antialias: true, preserveDrawingBuffer: true });
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+        // Floor
+        const plane = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), new THREE.MeshStandardMaterial({ color: 0x3f3f46, roughness: 0.8 }));
+        plane.rotation.x = -Math.PI / 2;
+        plane.position.y = -1;
+        plane.receiveShadow = true;
+        scene.add(plane);
+
+        // Lights
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+        scene.add(ambientLight);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.width = 1024;
+        dirLight.shadow.mapSize.height = 1024;
+        scene.add(dirLight);
+
+        let currentMesh = null;
+
+        function generateLevel() {
+            if(currentMesh) scene.remove(currentMesh);
+            
+            // RESTRICTED SHAPES: Only Box, Cylinder, Sphere
+            const shapes = [
+                { geo: new THREE.BoxGeometry(1.5, 1.5, 1.5), name: "Cube" },
+                { geo: new THREE.CylinderGeometry(0.8, 0.8, 2, 32), name: "Cylinder" },
+                { geo: new THREE.SphereGeometry(1, 32, 32), name: "Sphere" }
+            ];
+
+            const selection = shapes[Math.floor(Math.random() * shapes.length)];
+            state.targetShapeName = selection.name;
+            document.getElementById('shape-name-display').innerText = selection.name;
+
+            const material = new THREE.MeshStandardMaterial({ color: 0xa1a1aa, roughness: 0.4 });
+            currentMesh = new THREE.Mesh(selection.geo, material);
+            currentMesh.castShadow = true;
+            currentMesh.receiveShadow = true;
+
+            // Random Rotation
+            currentMesh.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, 0);
+
+            // Random Light
+            const lx = (Math.random() - 0.5) * 12;
+            const lz = (Math.random() * 5) + 3;
+            dirLight.position.set(lx, 8, lz);
+
+            scene.add(currentMesh);
+            camera.position.set(0, 1.5, 6);
+            camera.lookAt(0, 0, 0);
+        }
+
+        function resizeRenderer() {
+            const container = document.getElementById('studio-container');
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+        }
+        window.addEventListener('resize', resizeRenderer);
+        window.addEventListener('load', () => { resizeRenderer(); generateLevel(); });
+
+        function animate() { requestAnimationFrame(animate); renderer.render(scene, camera); }
+        animate();
+
+        // --- Interaction ---
+        function handleUpload(input) {
+            if (input.files && input.files[0]) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const imgLayer = document.getElementById('user-layer');
+                    userImageSrc = e.target.result;
+                    imgLayer.style.backgroundImage = `url(${e.target.result})`;
+                    imgLayer.style.opacity = 1;
+                    
+                    document.getElementById('step-draw').classList.add('hidden');
+                    document.getElementById('step-align').classList.remove('hidden');
+                    document.getElementById('studio-container').classList.add('comparing');
+                    
+                    // Reset Transform
+                    transform = { x: 0, y: 0, scale: 1, rotate: 0 };
+                    document.getElementById('scale-slider').value = 1;
+                    document.getElementById('rotate-slider').value = 0;
+                    applyTransform();
+                    initDrag();
+                }
+                reader.readAsDataURL(input.files[0]);
+            }
+        }
+
+        function resetToDraw() {
+            document.getElementById('step-draw').classList.remove('hidden');
+            document.getElementById('step-align').classList.add('hidden');
+            document.getElementById('user-layer').style.opacity = 0;
+            document.getElementById('studio-container').classList.remove('comparing');
+            document.getElementById('image-upload').value = ""; 
+        }
+
+        function updateTransform() {
+            transform.scale = parseFloat(document.getElementById('scale-slider').value);
+            transform.rotate = parseFloat(document.getElementById('rotate-slider').value);
+            applyTransform();
+        }
+
+        function applyTransform() {
+            const el = document.getElementById('user-layer');
+            el.style.transform = `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale}) rotate(${transform.rotate}deg)`;
+        }
+
+        function initDrag() {
+            const el = document.getElementById('studio-container');
+            let isDragging = false, startX, startY;
+            const start = (e) => {
+                if(e.target.tagName === 'INPUT') return;
+                isDragging = true;
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                startX = clientX - transform.x;
+                startY = clientY - transform.y;
+            };
+            const move = (e) => {
+                if (!isDragging) return;
+                e.preventDefault();
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                transform.x = clientX - startX;
+                transform.y = clientY - startY;
+                applyTransform();
+            };
+            const end = () => { isDragging = false; };
+            el.onmousedown = start; window.onmousemove = move; window.onmouseup = end;
+            el.ontouchstart = start; window.ontouchmove = move; window.ontouchend = end;
+        }
+
+        // --- AI VALIDATION LOGIC ---
+        
+        async function validateWithAI() {
+            if (!apiKey) {
+                alert("API Key is missing! Open the code file and add your Google Gemini API key to line 348.");
+                return;
+            }
+
+            document.getElementById('loader').classList.remove('hidden');
+
+            try {
+                // 1. Capture Reference (Three.js)
+                const refDataUrl = renderer.domElement.toDataURL('image/png');
+                const refBase64 = refDataUrl.split(',')[1];
+
+                // 2. Capture User Sketch (Apply Transform)
+                const userBase64 = await captureUserCanvas();
+
+                // 3. Prompt Construction
+                const promptText = `
+                    You are an encouraging art teacher evaluating a beginner student's perspective drawing exercise.
+                    
+                    Image 1 (First image provided) is the 3D Reference Model of a ${state.targetShapeName}.
+                    Image 2 (Second image provided) is the Student's Sketch.
+
+                    Compare the sketch to the reference on three criteria:
+                    1. SHAPE: Is the student attempting to draw the correct primitive (Cube, Sphere, or Cylinder)? Accept rough lines, but the fundamental shape must be correct.
+                    2. ORIENTATION: (CRITICAL CHECK) First, analyze the Reference image. Which faces are visible? Which way is it tilted?
+                                     Then, check the Sketch. Does it show roughly the SAME visible faces?
+                                     Note: If the shape is a 'Sphere', orientation is always a match unless it's squashed into an oval.
+                    3. LIGHTING: (STRICTER CHECK) Is the shading clearly on the correct side relative to the light source in the reference? The shadow placement must be directionally accurate. Random scribbles do not count.
+
+                    Return ONLY a valid JSON object with this structure:
+                    {
+                        "detected_shape_name": "String (e.g. 'Cube', 'Messy Circle', 'Cylinder')",
+                        "shape_match": boolean,
+                        "reference_orientation_desc": "String (Description of what faces you see in the Reference)",
+                        "orientation_match": boolean,
+                        "orientation_feedback": "String (short advice, e.g. 'Good match, both show top/right faces' or 'Ref shows top, you drew bottom')",
+                        "lighting_match": boolean,
+                        "lighting_feedback": "String (short advice, e.g. 'Shadow is correct' or 'Light source should be left')",
+                        "score_0_to_100": number
+                    }
+                `;
+
+                // 4. Call Gemini API
+                // NOTE: Using 'gemini-2.5-flash-preview-09-2025' for Canvas compatibility.
+                // If running locally, change this URL to 'gemini-1.5-flash'
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{
+                            parts: [
+                                { text: promptText },
+                                { inlineData: { mimeType: "image/png", data: refBase64 } },
+                                { inlineData: { mimeType: "image/png", data: userBase64 } }
+                            ]
+                        }],
+                        generationConfig: {
+                            responseMimeType: "application/json"
+                        }
+                    })
+                });
+
+                if (!response.ok) {
+                    let errorMessage = 'API Call Failed';
+                    try {
+                        const errorData = await response.json();
+                        errorMessage = errorData.error?.message || errorMessage;
+                    } catch (e) {
+                        errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+                    }
+                    throw new Error(errorMessage);
+                }
+
+                const data = await response.json();
+                const textResponse = data.candidates[0].content.parts[0].text;
+                const result = JSON.parse(textResponse);
+
+                // 5. Update UI
+                showResultsModal(result);
+
+            } catch (err) {
+                console.error(err);
+                alert(`AI Error: ${err.message}\n\nPlease check your API key and internet connection.`);
+            } finally {
+                document.getElementById('loader').classList.add('hidden');
+            }
+        }
+
+        function captureUserCanvas() {
+            return new Promise((resolve) => {
+                const gl = renderer.getContext();
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = gl.drawingBufferWidth;
+                tempCanvas.height = gl.drawingBufferHeight;
+                const ctx = tempCanvas.getContext('2d');
+                
+                const img = new Image();
+                img.src = userImageSrc;
+                img.onload = () => {
+                    ctx.save();
+                    // Fill black background to help AI see lines clearly against dark context
+                    ctx.fillStyle = "#000000"; 
+                    ctx.fillRect(0,0, tempCanvas.width, tempCanvas.height);
+                    
+                    ctx.translate(tempCanvas.width/2 + transform.x, tempCanvas.height/2 + transform.y);
+                    ctx.rotate(transform.rotate * Math.PI / 180);
+                    ctx.scale(transform.scale, transform.scale);
+                    
+                    const aspect = img.width / img.height;
+                    let drawW = tempCanvas.width;
+                    let drawH = drawW / aspect;
+                    ctx.drawImage(img, -drawW/2, -drawH/2, drawW, drawH);
+                    ctx.restore();
+                    
+                    const dataUrl = tempCanvas.toDataURL('image/png');
+                    resolve(dataUrl.split(',')[1]);
+                };
+            });
+        }
+
+        // --- UI LOGIC ---
+        function showResultsModal(data) {
+            const m = document.getElementById('results-modal');
+            const btn = document.getElementById('btn-continue');
+            
+            // Shape
+            updateCard('shape', data.shape_match);
+            document.getElementById('res-shape-target').innerText = state.targetShapeName;
+            document.getElementById('res-shape-user').innerText = data.detected_shape_name;
+
+            // Orientation
+            updateCard('orient', data.orientation_match);
+            document.getElementById('res-orient-feedback').innerText = data.orientation_feedback;
+
+            // Light
+            updateCard('light', data.lighting_match);
+            document.getElementById('res-light-feedback').innerText = data.lighting_feedback;
+
+            // Final Logic
+            let passed = 0;
+            if(data.shape_match) passed++;
+            if(data.orientation_match) passed++;
+            if(data.lighting_match) passed++;
+
+            const badge = document.getElementById('final-result-badge');
+            if(passed >= 2) {
+                badge.innerText = "Pass";
+                badge.className = "px-3 py-1 rounded bg-green-600 text-xs font-bold uppercase";
+                state.roundResult = true;
+                btn.innerText = "Next Level";
+                btn.className = "w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-lg transition";
+            } else {
+                badge.innerText = "Fail";
+                badge.className = "px-3 py-1 rounded bg-red-600 text-xs font-bold uppercase";
+                state.roundResult = false;
+                btn.innerText = "Try Again";
+                btn.className = "w-full bg-zinc-700 hover:bg-zinc-600 text-white font-bold py-3 rounded-lg transition";
+            }
+
+            m.classList.remove('hidden');
+        }
+
+        function updateCard(id, pass) {
+            const card = document.getElementById('card-' + id);
+            const iconPass = document.getElementById('icon-' + id + '-pass');
+            const iconFail = document.getElementById('icon-' + id + '-fail');
+            
+            card.className = "metric-card " + (pass ? "pass" : "fail");
+            if(pass) {
+                iconPass.classList.remove('hidden');
+                iconFail.classList.add('hidden');
+            } else {
+                iconPass.classList.add('hidden');
+                iconFail.classList.remove('hidden');
+            }
+        }
+
+        function closeResultsAndContinue() {
+            document.getElementById('results-modal').classList.add('hidden');
+            
+            if(state.roundResult) {
+                // SUCCESS: Move to next level
+                state.score += 5;
+                state.level++;
+                document.getElementById('score-display').innerText = state.score + " pts";
+                document.getElementById('streak-broken').classList.add('hidden');
+                nextLevel();
+            } else {
+                // FAIL: Just close modal, let them retry
+                state.streak = false;
+                document.getElementById('streak-broken').classList.remove('hidden');
+                // We do NOT call nextLevel() here. 
+                // User is back at the "Align" screen and can adjust sliders or press Back to upload a new photo.
+            }
+        }
+
+        function nextLevel(skip) {
+            if(skip) {
+                state.streak = false;
+                document.getElementById('streak-broken').classList.remove('hidden');
+            }
+            document.getElementById('level-display').innerText = state.level;
+            resetToDraw();
+            generateLevel();
+        }
+
+    </script>
+</body>
+</html>
