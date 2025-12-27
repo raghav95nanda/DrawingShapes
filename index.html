@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Perspective Studio (AI Powered)</title>
     <!-- Three.js for 3D Rendering -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -14,16 +14,22 @@
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 
     <style>
-        body { background-color: #18181b; color: #e4e4e7; touch-action: none; }
+        /* Use dynamic viewport height for mobile browser bars */
+        body { background-color: #18181b; color: #e4e4e7; touch-action: none; height: 100dvh; }
         
-        /* The Stage */
+        /* The Stage - Smaller on mobile to fit controls */
         #studio-container {
             position: relative;
             width: 100%;
-            height: 45vh;
+            height: 35vh; /* Mobile height */
             background: #27272a;
             overflow: hidden;
             border-bottom: 2px solid #3f3f46;
+            flex-shrink: 0;
+        }
+
+        @media (min-width: 768px) {
+            #studio-container { height: 50vh; } /* Desktop height */
         }
 
         #three-canvas {
@@ -70,13 +76,13 @@
         .fail { border-left-color: #ef4444; }
 
         .hidden-input { display: none; }
-        input[type=range] { width: 100%; accent-color: #8b5cf6; }
+        input[type=range] { width: 100%; accent-color: #8b5cf6; height: 40px; } /* Taller touch targets */
     </style>
 </head>
-<body class="flex flex-col h-screen overflow-hidden">
+<body class="flex flex-col overflow-hidden">
 
     <!-- Header -->
-    <header class="flex justify-between items-center p-3 bg-zinc-900 border-b border-zinc-800">
+    <header class="flex justify-between items-center p-3 bg-zinc-900 border-b border-zinc-800 shrink-0">
         <div>
             <h1 class="font-bold text-base text-white"><i class="fas fa-magic text-purple-500 mr-2"></i>Perspective Studio</h1>
             <div class="text-xs text-zinc-400">AI Art Teacher Mode</div>
@@ -94,38 +100,45 @@
     </div>
 
     <!-- Controls Area -->
-    <main class="flex-1 flex flex-col p-4 gap-3 bg-zinc-900 overflow-y-auto">
+    <main class="flex-1 flex flex-col p-4 bg-zinc-900 overflow-y-auto">
         
         <!-- Step 1: Draw -->
         <div id="step-draw" class="flex-1 flex flex-col justify-center items-center gap-4">
             <p class="text-center text-zinc-400">Level <span id="level-display">1</span>: <span id="shape-name-display" class="font-bold text-white">Box</span></p>
-            <label class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-8 rounded-full cursor-pointer shadow-lg flex items-center gap-2">
-                <i class="fas fa-camera"></i> Upload Sketch
+            <label class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-4 px-8 rounded-full cursor-pointer shadow-lg flex items-center gap-2 active:scale-95 transition-transform">
+                <i class="fas fa-camera text-xl"></i> <span>Upload Sketch</span>
                 <input type="file" id="image-upload" accept="image/*" class="hidden-input" onchange="handleUpload(this)">
             </label>
-            <button onclick="nextLevel(false)" class="text-xs text-zinc-500 underline">Skip Level</button>
+            <button onclick="nextLevel(false)" class="text-xs text-zinc-500 underline py-2">Skip Level</button>
         </div>
 
         <!-- Step 2: Align -->
-        <div id="step-align" class="hidden flex-1 flex flex-col">
-            <div class="text-center text-zinc-300 text-xs mb-2 uppercase tracking-wide">
+        <div id="step-align" class="hidden flex flex-col h-full">
+            <div class="text-center text-zinc-300 text-xs mb-4 uppercase tracking-wide font-bold">
                 Align Your Sketch
             </div>
             
-            <div class="grid grid-cols-2 gap-4 mb-4">
+            <div class="space-y-6 mb-6">
                 <div>
-                    <label class="text-xs text-zinc-500">Scale</label>
+                    <div class="flex justify-between mb-1">
+                        <label class="text-xs text-zinc-500 font-bold">SCALE</label>
+                        <i class="fas fa-search text-zinc-600 text-xs"></i>
+                    </div>
                     <input type="range" min="0.5" max="3" step="0.05" value="1" id="scale-slider" oninput="updateTransform()">
                 </div>
                 <div>
-                    <label class="text-xs text-zinc-500">Rotation</label>
+                    <div class="flex justify-between mb-1">
+                        <label class="text-xs text-zinc-500 font-bold">ROTATION</label>
+                        <i class="fas fa-sync-alt text-zinc-600 text-xs"></i>
+                    </div>
                     <input type="range" min="-180" max="180" step="1" value="0" id="rotate-slider" oninput="updateTransform()">
                 </div>
             </div>
 
-            <div class="flex gap-2 mt-auto">
-                <button onclick="resetToDraw()" class="flex-1 bg-zinc-700 py-3 rounded text-zinc-300 font-bold">Back</button>
-                <button onclick="validateWithAI()" class="flex-1 bg-purple-600 hover:bg-purple-700 py-3 rounded text-white font-bold shadow-lg flex justify-center items-center gap-2">
+            <!-- Buttons now sit naturally below content, ensuring visibility -->
+            <div class="flex gap-3 mt-4 mb-safe">
+                <button onclick="resetToDraw()" class="flex-1 bg-zinc-700 active:bg-zinc-600 py-3 rounded-lg text-zinc-300 font-bold">Back</button>
+                <button onclick="validateWithAI()" class="flex-[2] bg-purple-600 active:bg-purple-700 py-3 rounded-lg text-white font-bold shadow-lg flex justify-center items-center gap-2">
                     <i class="fas fa-robot"></i> Ask AI Teacher
                 </button>
             </div>
@@ -135,8 +148,8 @@
 
     <!-- Results Modal -->
     <div id="results-modal" class="fixed inset-0 z-50 hidden flex flex-col items-center justify-center p-4">
-        <div class="bg-zinc-900 w-full max-w-md rounded-xl border border-zinc-700 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            <div class="p-4 bg-zinc-800 border-b border-zinc-700 flex justify-between items-center">
+        <div class="bg-zinc-900 w-full max-w-md rounded-xl border border-zinc-700 shadow-2xl overflow-hidden flex flex-col max-h-[90dvh]">
+            <div class="p-4 bg-zinc-800 border-b border-zinc-700 flex justify-between items-center shrink-0">
                 <h2 class="text-xl font-bold text-white">Critique</h2>
                 <span id="final-result-badge" class="px-3 py-1 rounded bg-zinc-700 text-xs font-bold uppercase">Pending</span>
             </div>
@@ -176,7 +189,7 @@
                 </div>
             </div>
 
-            <div class="p-4 bg-zinc-800 border-t border-zinc-700">
+            <div class="p-4 bg-zinc-800 border-t border-zinc-700 shrink-0 mb-safe">
                 <button id="btn-continue" onclick="closeResultsAndContinue()" class="w-full bg-zinc-700 hover:bg-zinc-600 text-white font-bold py-3 rounded-lg transition">
                     Continue
                 </button>
@@ -187,14 +200,15 @@
     <!-- Overlay Loading -->
     <div id="loader" class="fixed inset-0 bg-black z-50 hidden flex items-center justify-center flex-col">
         <i class="fas fa-circle-notch fa-spin text-4xl text-purple-500 mb-4"></i>
-        <p class="text-zinc-400 animate-pulse">AI is analyzing your sketch...</p>
+        <p class="text-zinc-400 animate-pulse mt-4">AI is analyzing your sketch...</p>
     </div>
 
     <script>
         // --- API & State ---
-        // TODO: PASTE YOUR API KEY HERE FOR LOCAL USE
+        // For Local/GitHub: Paste your API key below and verify the model name in the fetch URL later
         const apiKey = "AIzaSyB95vcE7Odq6Fl6aegHpjZepzcetT0OdUk"; 
-        let state = { score: 0, level: 1, streak: true, targetShapeName: 'Box', roundResult: false };
+        
+        const state = { score: 0, level: 1, streak: true, targetShapeName: 'Box', roundResult: false };
         let transform = { x: 0, y: 0, scale: 1, rotate: 0 };
         let userImageSrc = null;
 
@@ -227,7 +241,6 @@
         function generateLevel() {
             if(currentMesh) scene.remove(currentMesh);
             
-            // RESTRICTED SHAPES: Only Box, Cylinder, Sphere
             const shapes = [
                 { geo: new THREE.BoxGeometry(1.5, 1.5, 1.5), name: "Cube" },
                 { geo: new THREE.CylinderGeometry(0.8, 0.8, 2, 32), name: "Cylinder" },
@@ -340,9 +353,9 @@
         // --- AI VALIDATION LOGIC ---
         
         async function validateWithAI() {
-            if (!apiKey) {
-                alert("API Key is missing! Open the code file and add your Google Gemini API key to line 348.");
-                return;
+            
+            if (!apiKey && window.location.hostname !== 'localhost') {
+                 // Check if we are in the canvas preview or local.
             }
 
             document.getElementById('loader').classList.remove('hidden');
@@ -382,9 +395,8 @@
                     }
                 `;
 
-                // 4. Call Gemini API
-                // NOTE: Using 'gemini-2.5-flash-preview-09-2025' for Canvas compatibility.
-                // If running locally, change this URL to 'gemini-1.5-flash'
+                // 4. Call API
+                // LOCAL USAGE: Change 'gemini-2.5-flash-preview-09-2025' to 'gemini-1.5-flash'
                 const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -396,9 +408,7 @@
                                 { inlineData: { mimeType: "image/png", data: userBase64 } }
                             ]
                         }],
-                        generationConfig: {
-                            responseMimeType: "application/json"
-                        }
+                        generationConfig: { responseMimeType: "application/json" }
                     })
                 });
 
@@ -422,7 +432,7 @@
 
             } catch (err) {
                 console.error(err);
-                alert(`AI Error: ${err.message}\n\nPlease check your API key and internet connection.`);
+                alert(`AI Error: ${err.message}\n\nPlease check your connection or API key.`);
             } finally {
                 document.getElementById('loader').classList.add('hidden');
             }
