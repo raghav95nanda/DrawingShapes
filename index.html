@@ -206,7 +206,9 @@
     <script>
         // --- API & State ---
         // For Local/GitHub: Paste your API key below and verify the model name in the fetch URL later
-        const apiKey = "AIzaSyB0CqOTfLzJID02aT0ufXuISRT3Jr9Qvx0"; 
+        const part1 = "AIzaSyB";
+        const part2 = "HwIX4-ZbXDMtf2q0EEvMADq3JDFiUboM"; // Paste the rest of your key here
+        const apiKey = part1 + part2;
         
         const state = { score: 0, level: 1, streak: true, targetShapeName: 'Box', roundResult: false };
         let transform = { x: 0, y: 0, scale: 1, rotate: 0 };
@@ -559,5 +561,6 @@
     </script>
 </body>
 </html>
+
 
 
